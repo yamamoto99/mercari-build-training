@@ -77,6 +77,13 @@ func addItem(c echo.Context) error {
 	if err != nil {
 		log.Fatalf("JSONファイル書き込み中にエラーが発生しました: %v", err)
 	}
+
+	res := Response{Message: "書き込みが正常に完了しました。"}
+
+	return c.JSON(http.StatusOK, res)
+}
+
+func getItems(c echo.Context) error {
 	// jsonファイル読み込み
 	afterItems, err := os.ReadFile("items.json")
 	if err != nil {
@@ -84,8 +91,6 @@ func addItem(c echo.Context) error {
 	}
 	// terminal上で末尾改行してない時に自動改行の%が付与されるのを防ぐため、あらかじめ改行を付与
 	res := append(afterItems, byte('\n'))
-
-	// message := fmt.Sprintf("item received: %s category: %s", name, category)
 
 	// 取得したのがbyte形式だったのでJSON->JSONBlobに変更
 	return c.JSONBlob(http.StatusOK, res)
@@ -125,6 +130,7 @@ func main() {
 
 	// Routes
 	e.GET("/", root)
+	e.GET("/items", getItems)
 	e.POST("/items", addItem)
 	e.GET("/image/:imageFilename", getImg)
 
