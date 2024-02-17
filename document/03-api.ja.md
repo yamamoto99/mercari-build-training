@@ -143,7 +143,8 @@ Image not found: <image path>
 これを表示するためには、コードのどこを変更したらいいでしょうか？
 
 **:beginner: Point**
-* Log levelとは？
+* Log levelとは？</br>
+-> [logger](https://pkg.go.dev/github.com/apsdehal/go-logger)
 * webサーバーでは、本番はどのログレベルまで表示する？
 
 ---
