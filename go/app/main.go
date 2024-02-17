@@ -1,10 +1,17 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/labstack/echo/v4"
@@ -25,8 +32,46 @@ type Items struct {
 }
 
 type Item struct {
-	Name     string `json:"name"`
-	Category string `json:"category"`
+	Name      string `json:"name"`
+	Category  string `json:"category"`
+	ImageName string `json:"imageName"`
+}
+
+func copyfile(img *multipart.FileHeader) (string, error) {
+	imgName := img.Filename
+	// 先頭から(元の長さ-拡張子の長さ)だけ取得
+	imgBaseName := imgName[:len(imgName)-len(filepath.Ext(imgName))]
+	// 拡張子を除いたファイル名でhash値を生成
+	s := sha256.New()
+	_, err := io.WriteString(s, imgBaseName)
+	if err != nil {
+		return "", fmt.Errorf("sha256に変換できませんでした: %v", err)
+	}
+	// 拡張子をつけるとともにsが[]byteなのでstringに変換
+	newFileName := hex.EncodeToString(s.Sum(nil)) + filepath.Ext(imgName)
+	// ファイルパスを指定して名前をhash化したファイルを生成
+	newFile, err := os.Create("images/" + newFileName)
+	if err != nil {
+		return "", fmt.Errorf("新しい画像ファイルの生成に失敗しました: %v", err)
+	}
+	// 既存のimgファイルを開く
+	originalFile, err := img.Open()
+	if err != nil {
+		return "", fmt.Errorf("元画像ファイルの読み込みに失敗しました: %v", err)
+	}
+	// originalファイルclose
+	defer func(file multipart.File) {
+		err := file.Close()
+		if err != nil {
+			log.Fatalf("ファイルCloseに失敗しました: %v", err)
+		}
+	}(originalFile)
+	// 新しいファイルに既存のデータをコピー
+	_, err = io.Copy(newFile, originalFile)
+	if err != nil {
+		return "", fmt.Errorf("ファイルのコピーに失敗しました: %v", err)
+	}
+	return newFileName, err
 }
 
 func root(c echo.Context) error {
@@ -38,29 +83,42 @@ func addItem(c echo.Context) error {
 	// Get form data
 	name := c.FormValue("name")
 	category := c.FormValue("category")
+	img, err := c.FormFile("image")
+	if err != nil {
+		log.Fatalf("画像の受け取りに失敗しました: %v", err)
+	}
+	// 入手したファイルから名前をhash化したファイルを生成
+	newFileName, err := copyfile(img)
+	if err != nil {
+		log.Fatalf("%v", err)
+	}
+
 	c.Logger().Infof("Receive item: %s", name)
 	c.Logger().Infof("Receive category: %s", category)
+	c.Logger().Infof("Receive imageFile: %s", newFileName)
 
-	item := Item{Name: name, Category: category}
+	item := Item{Name: name, Category: category, ImageName: newFileName}
 	// jsonファイル読み込み
 	inJsonItems, err := os.ReadFile("items.json")
 	if err != nil {
 		log.Fatalf("JSONデータを読み込めませんでした: %v", err)
 	}
 	var inItems Items
-	// 読み込んだファイルが空ではない時構造体にJSONデータを格納
+	// 読み込んだファイルが空ではない時JSONを構造体に変換
 	if len(inJsonItems) != 0 {
 		err = json.Unmarshal(inJsonItems, &inItems)
 		if err != nil {
 			log.Fatalf("JSONファイルを構造体に変換できませんでした: %v", err)
 		}
 	}
+	// 構造体にformの値を追加
 	inItems.Items = append(inItems.Items, item)
 	// json.MarshalでJSON形式に変換
 	output, err := json.Marshal(&inItems)
 	if err != nil {
 		log.Fatalf("JSON生成中にエラーが発生しました: %v", err)
 	}
+	// jsonファイルを作成、すでにある場合はクリアして開く
 	file, err := os.Create("items.json")
 	if err != nil {
 		log.Fatalf("JSONファイルを開けませんでした: %v", err)
@@ -96,6 +154,34 @@ func getItems(c echo.Context) error {
 	return c.JSONBlob(http.StatusOK, res)
 }
 
+func getItemById(c echo.Context) error {
+	// jsonファイル読み込み
+	inJsonItems, err := os.ReadFile("items.json")
+	if err != nil {
+		log.Fatalf("JSONデータを読み込めませんでした: %v", err)
+	}
+	var inItems Items
+	// 読み込んだファイルが空の時早期return
+	if len(inJsonItems) == 0 {
+		res := Response{Message: "itemはまだ登録されていません"}
+		return c.JSON(http.StatusOK, res)
+	}
+	err = json.Unmarshal(inJsonItems, &inItems)
+	if err != nil {
+		log.Fatalf("JSONファイルを構造体に変換できませんでした: %v", err)
+	}
+	index, err := strconv.Atoi(c.Param("item_id"))
+	if err != nil {
+		log.Fatalf("idの取得に失敗しました: %v", err)
+	}
+	if len(inItems.Items) <= index {
+		res := Response{Message: "存在しないIDです"}
+		return c.JSON(http.StatusOK, res)
+	}
+	res := inItems.Items[index]
+	return c.JSON(http.StatusOK, res)
+}
+
 func getImg(c echo.Context) error {
 	// Create image path
 	imgPath := path.Join(ImgDir, c.Param("imageFilename"))
@@ -105,7 +191,7 @@ func getImg(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, res)
 	}
 	if _, err := os.Stat(imgPath); err != nil {
-		c.Logger().Debugf("Image not found: %s", imgPath)
+		c.Logger().Infof("Image not found: %s", imgPath)
 		imgPath = path.Join(ImgDir, "default.jpg")
 	}
 	return c.File(imgPath)
@@ -132,6 +218,7 @@ func main() {
 	e.GET("/", root)
 	e.GET("/items", getItems)
 	e.POST("/items", addItem)
+	e.GET("/items/:item_id", getItemById)
 	e.GET("/image/:imageFilename", getImg)
 
 	// Start server
