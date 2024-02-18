@@ -38,35 +38,34 @@ type Item struct {
 }
 
 func copyfile(img *multipart.FileHeader) (string, error) {
-	imgName := img.Filename
-	// 先頭から(元の長さ-拡張子の長さ)だけ取得
-	imgBaseName := imgName[:len(imgName)-len(filepath.Ext(imgName))]
-	// 拡張子を除いたファイル名でhash値を生成
-	s := sha256.New()
-	_, err := io.WriteString(s, imgBaseName)
+	// 既存のimgファイルを開く
+	originalFile, err := img.Open()
 	if err != nil {
-		return "", fmt.Errorf("sha256に変換できませんでした: %v", err)
+		return "", fmt.Errorf("元画像ファイルの読み込みに失敗しました: %v", err)
 	}
+	// ファイルをhash化
+	hash := sha256.New()
+	if _, err := io.Copy(hash, originalFile); err != nil {
+		return "", fmt.Errorf("hash値の生成に失敗しました: %v", err)
+	}
+	_ = originalFile.Close()
 	// 拡張子をつけるとともにsが[]byteなのでstringに変換
-	newFileName := hex.EncodeToString(s.Sum(nil)) + filepath.Ext(imgName)
+	newFileName := hex.EncodeToString(hash.Sum(nil)) + filepath.Ext(img.Filename)
 	// ファイルパスを指定して名前をhash化したファイルを生成
 	newFile, err := os.Create("images/" + newFileName)
 	if err != nil {
 		return "", fmt.Errorf("新しい画像ファイルの生成に失敗しました: %v", err)
 	}
 	// 既存のimgファイルを開く
-	originalFile, err := img.Open()
+	originalFile, err = img.Open()
 	if err != nil {
 		return "", fmt.Errorf("元画像ファイルの読み込みに失敗しました: %v", err)
 	}
-	// ファイルclose
-	defer func(originalFile multipart.File) {
-		_ = originalFile.Close()
-	}(originalFile)
 	// 新しいファイルに既存のデータをコピー
 	if _, err := io.Copy(newFile, originalFile); err != nil {
 		return "", fmt.Errorf("ファイルのコピーに失敗しました: %v", err)
 	}
+	_ = originalFile.Close()
 	return newFileName, err
 }
 
