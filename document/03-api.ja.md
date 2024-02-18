@@ -45,7 +45,8 @@ $ curl -X POST \
 
 **:beginner: Point**
 
-* POSTとGETのリクエストの違いについて調べてみましょう
+* POSTとGETのリクエストの違いについて調べてみましょう</br>
+->[GETとPOSTの違い](https://qiita.com/kanataxa/items/522efb74421255f0e0a1)
 * ブラウザで `http://127.0.0.1:9000/items` にアクセスしても `{"message": "item received: <name>"}`
   が返ってこないのはなぜでしょうか？
   * アクセスしたときに返ってくる**HTTPステータスコード**はいくつですか？
@@ -69,7 +70,9 @@ $ curl -X POST \
 * category: 商品のカテゴリ(string)
 
 このままではデータの保存ができないので、jsonファイルに保存するようにしましょう。
-`items.json` というファイルを作り、そこの`items`というキーに新しく登録された商品を追加するようにしましょう。
+`items.json` というファイルを作り、そこの`items`というキーに新しく登録された商品を追加するようにしましょう。</br>
+->[公式ドキュメント:osパッケージ](https://pkg.go.dev/os)</br>
+->[公式ドキュメント:jsonパッケージ](https://pkg.go.dev/encoding/json)
 
 商品を追加すると、items.jsonの中身は以下のようになることを期待しています。
 ```json
@@ -100,7 +103,9 @@ $ curl -X GET 'http://127.0.0.1:9000/items'
 商品情報に画像(image)を登録できるように、`GET /items`と`POST /items`のエンドポイントを変更します。
 
 * 画像は `images` というフォルダを作成し保存します
-* ポストされた画像のファイルを sha256 で hash化し、`<hash>.jpg`という名前で保存します
+* ポストされた画像のファイルを sha256 で hash化し、`<hash>.jpg`という名前で保存します</br>
+->[hash化](https://qiita.com/curious-eyes/items/abb29e1a06ac5bc2c5f2)</br>
+->[公式ドキュメント:filepathパッケージ](https://pkg.go.dev/path/filepath)
 * itemsに画像のファイル名をstringで保存できるように変更を加えます
 
 ```shell
