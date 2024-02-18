@@ -59,16 +59,12 @@ func copyfile(img *multipart.FileHeader) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("元画像ファイルの読み込みに失敗しました: %v", err)
 	}
-	// originalファイルclose
-	defer func(file multipart.File) {
-		err := file.Close()
-		if err != nil {
-			log.Fatalf("ファイルCloseに失敗しました: %v", err)
-		}
+	// ファイルclose
+	defer func(originalFile multipart.File) {
+		_ = originalFile.Close()
 	}(originalFile)
 	// 新しいファイルに既存のデータをコピー
-	_, err = io.Copy(newFile, originalFile)
-	if err != nil {
+	if _, err := io.Copy(newFile, originalFile); err != nil {
 		return "", fmt.Errorf("ファイルのコピーに失敗しました: %v", err)
 	}
 	return newFileName, err
@@ -85,12 +81,12 @@ func addItem(c echo.Context) error {
 	category := c.FormValue("category")
 	img, err := c.FormFile("image")
 	if err != nil {
-		log.Fatalf("画像の受け取りに失敗しました: %v", err)
+		c.Logger().Fatalf("画像の受け取りに失敗しました: %v", err)
 	}
 	// 入手したファイルから名前をhash化したファイルを生成
 	newFileName, err := copyfile(img)
 	if err != nil {
-		log.Fatalf("%v", err)
+		c.Logger().Fatalf("%v", err)
 	}
 
 	c.Logger().Infof("Receive item: %s", name)
@@ -101,14 +97,14 @@ func addItem(c echo.Context) error {
 	// jsonファイル読み込み
 	inJsonItems, err := os.ReadFile("items.json")
 	if err != nil {
-		log.Fatalf("JSONデータを読み込めませんでした: %v", err)
+		c.Logger().Fatalf("JSONデータを読み込めませんでした: %v", err)
 	}
 	var inItems Items
 	// 読み込んだファイルが空ではない時JSONを構造体に変換
 	if len(inJsonItems) != 0 {
 		err = json.Unmarshal(inJsonItems, &inItems)
 		if err != nil {
-			log.Fatalf("JSONファイルを構造体に変換できませんでした: %v", err)
+			c.Logger().Fatalf("JSONファイルを構造体に変換できませんでした: %v", err)
 		}
 	}
 	// 構造体にformの値を追加
@@ -116,26 +112,21 @@ func addItem(c echo.Context) error {
 	// json.MarshalでJSON形式に変換
 	output, err := json.Marshal(&inItems)
 	if err != nil {
-		log.Fatalf("JSON生成中にエラーが発生しました: %v", err)
+		c.Logger().Fatalf("JSON生成中にエラーが発生しました: %v", err)
 	}
 	// jsonファイルを作成、すでにある場合はクリアして開く
 	file, err := os.Create("items.json")
 	if err != nil {
-		log.Fatalf("JSONファイルを開けませんでした: %v", err)
+		c.Logger().Fatalf("JSONファイルを開けませんでした: %v", err)
 	}
-	// jsonファイルclose
+	// ファイルclose
 	defer func(file *os.File) {
-		err := file.Close()
-		if err != nil {
-			log.Fatalf("ファイルCloseに失敗しました: %v", err)
-		}
+		_ = file.Close()
 	}(file)
 	// jsonファイル書き込み
-	_, err = file.Write(output)
-	if err != nil {
-		log.Fatalf("JSONファイル書き込み中にエラーが発生しました: %v", err)
+	if _, err = file.Write(output); err != nil {
+		c.Logger().Fatalf("JSONファイル書き込み中にエラーが発生しました: %v", err)
 	}
-
 	res := Response{Message: "書き込みが正常に完了しました。"}
 
 	return c.JSON(http.StatusOK, res)
@@ -145,7 +136,7 @@ func getItems(c echo.Context) error {
 	// jsonファイル読み込み
 	afterItems, err := os.ReadFile("items.json")
 	if err != nil {
-		log.Fatalf("JSONデータを読み込めませんでした: %v", err)
+		c.Logger().Fatalf("JSONデータを読み込めませんでした: %v", err)
 	}
 	// terminal上で末尾改行してない時に自動改行の%が付与されるのを防ぐため、あらかじめ改行を付与
 	res := append(afterItems, byte('\n'))
@@ -158,7 +149,7 @@ func getItemById(c echo.Context) error {
 	// jsonファイル読み込み
 	inJsonItems, err := os.ReadFile("items.json")
 	if err != nil {
-		log.Fatalf("JSONデータを読み込めませんでした: %v", err)
+		c.Logger().Fatalf("JSONデータを読み込めませんでした: %v", err)
 	}
 	var inItems Items
 	// 読み込んだファイルが空の時早期return
@@ -168,11 +159,11 @@ func getItemById(c echo.Context) error {
 	}
 	err = json.Unmarshal(inJsonItems, &inItems)
 	if err != nil {
-		log.Fatalf("JSONファイルを構造体に変換できませんでした: %v", err)
+		c.Logger().Fatalf("JSONファイルを構造体に変換できませんでした: %v", err)
 	}
 	index, err := strconv.Atoi(c.Param("item_id"))
 	if err != nil {
-		log.Fatalf("idの取得に失敗しました: %v", err)
+		c.Logger().Fatalf("idの取得に失敗しました: %v", err)
 	}
 	if len(inItems.Items) <= index {
 		res := Response{Message: "存在しないIDです"}
