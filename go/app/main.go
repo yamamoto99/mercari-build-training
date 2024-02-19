@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -70,11 +71,6 @@ func copyfile(img *multipart.FileHeader) (string, error) {
 	return newFileName, err
 }
 
-func root(c echo.Context) error {
-	res := Response{Message: "Hello, world!"}
-	return c.JSON(http.StatusOK, res)
-}
-
 func connectDB(c echo.Context) *sql.DB {
 	// dbOpen
 	db, err := sql.Open("sqlite3", "../db/mercari.sqlite3")
@@ -82,6 +78,74 @@ func connectDB(c echo.Context) *sql.DB {
 		c.Logger().Fatalf("DB接続エラー: %v", err)
 	}
 	return db
+}
+
+func jsonconv(rows *sql.Rows) ([]byte, error) {
+	items := new(Items)
+	for rows.Next() {
+		item := Item{}
+		if err := rows.Scan(&item.Id, &item.Name, &item.Category, &item.ImageName); err != nil {
+			return nil, err
+		}
+		items.Items = append(items.Items, item)
+	}
+	// json.MarshalでJSON形式に変換
+	output, err := json.Marshal(&items)
+	if err != nil {
+		return nil, err
+	}
+	//// terminal上で末尾改行してない時に自動改行の%が付与されるのを防ぐため、あらかじめ改行を付与
+	res := append(output, byte('\n'))
+
+	return res, err
+}
+
+func checkCategoryId(db *sql.DB, category string) (int, error) {
+	// ステートメントを生成
+	stmt, err := db.Prepare("SELECT * FROM categories WHERE category_name LIKE (?) LIMIT 1")
+	if err != nil {
+		return -1, fmt.Errorf("ステートメント生成エラー: %v", err)
+	}
+	// stmtClose
+	defer func(data *sql.Stmt) {
+		_ = data.Close()
+	}(stmt)
+	// DBから取得
+	row := stmt.QueryRow(category)
+	var id int
+	var name string
+	res := row.Scan(&id, &name)
+	if res != nil {
+		if errors.Is(res, sql.ErrNoRows) {
+			// ステートメントを生成
+			categorystmt, err := db.Prepare("INSERT INTO categories (category_name) VALUES (?)")
+			if err != nil {
+				return -1, fmt.Errorf("ステートメント生成エラー: %v", err)
+			}
+			// stmtClose
+			defer func(data *sql.Stmt) {
+				_ = data.Close()
+			}(categorystmt)
+			// ステートメントを用いて書き込み
+			result, err := categorystmt.Exec(category)
+			if err != nil {
+				return -1, fmt.Errorf("SQL書き込みエラー: %v", err)
+			}
+			createdId, err := result.LastInsertId()
+			if err != nil {
+				return -1, fmt.Errorf("IDの取得エラー: %v", err)
+			}
+			return int(createdId), err
+		} else {
+			return -1, fmt.Errorf("検索失敗: %v", err)
+		}
+	}
+	return id, err
+}
+
+func root(c echo.Context) error {
+	res := Response{Message: "Hello, world!"}
+	return c.JSON(http.StatusOK, res)
 }
 
 func addItem(c echo.Context) error {
@@ -105,8 +169,12 @@ func addItem(c echo.Context) error {
 	defer func(db *sql.DB) {
 		_ = db.Close()
 	}(db)
+	categoryId, err := checkCategoryId(db, category)
+	if err != nil {
+		c.Logger().Fatalf("failed id check: %v", err)
+	}
 	// ステートメントを生成
-	stmt, err := db.Prepare("INSERT INTO items (name, category, image_name) VALUES (?, ?, ?)")
+	stmt, err := db.Prepare("INSERT INTO items (name, category_id, image_name) VALUES (?, ?, ?)")
 	if err != nil {
 		c.Logger().Fatalf("SQL書き込みエラー: %v", err)
 	}
@@ -115,7 +183,7 @@ func addItem(c echo.Context) error {
 		_ = data.Close()
 	}(stmt)
 	// ステートメントを用いて書き込み
-	if _, err = stmt.Exec(name, category, newFileName); err != nil {
+	if _, err = stmt.Exec(name, categoryId, newFileName); err != nil {
 		c.Logger().Fatalf("SQL書き込みエラー: %v", err)
 	}
 
@@ -160,33 +228,13 @@ func addItem(c echo.Context) error {
 	return c.JSON(http.StatusOK, res)
 }
 
-func jsonconv(rows *sql.Rows) ([]byte, error) {
-	items := new(Items)
-	for rows.Next() {
-		item := Item{}
-		if err := rows.Scan(&item.Id, &item.Name, &item.Category, &item.ImageName); err != nil {
-			return nil, err
-		}
-		items.Items = append(items.Items, item)
-	}
-	// json.MarshalでJSON形式に変換
-	output, err := json.Marshal(&items)
-	if err != nil {
-		return nil, err
-	}
-	//// terminal上で末尾改行してない時に自動改行の%が付与されるのを防ぐため、あらかじめ改行を付与
-	res := append(output, byte('\n'))
-
-	return res, err
-}
-
 func getItems(c echo.Context) error {
 	db := connectDB(c)
 	// close処理
 	defer func(db *sql.DB) {
 		_ = db.Close()
 	}(db)
-	rows, err := db.Query("SELECT id, name, category, image_name FROM items")
+	rows, err := db.Query("SELECT items.id, items.name, categories.category_name, items.image_name FROM items INNER JOIN categories ON items.category_id = categories.category_id")
 	if err != nil {
 		c.Logger().Fatalf("DBから値を取得できませんでした: %v", err)
 	}
@@ -231,21 +279,6 @@ func getItems(c echo.Context) error {
 //	return c.JSON(http.StatusOK, res)
 //}
 
-func getImg(c echo.Context) error {
-	// Create image path
-	imgPath := path.Join(ImgDir, c.Param("imageFilename"))
-
-	if !strings.HasSuffix(imgPath, ".jpg") {
-		res := Response{Message: "Image path does not end with .jpg"}
-		return c.JSON(http.StatusBadRequest, res)
-	}
-	if _, err := os.Stat(imgPath); err != nil {
-		c.Logger().Infof("Image not found: %s", imgPath)
-		imgPath = path.Join(ImgDir, "default.jpg")
-	}
-	return c.File(imgPath)
-}
-
 func searchItem(c echo.Context) error {
 	keyword := c.QueryParam("keyword")
 	db := connectDB(c)
@@ -272,6 +305,21 @@ func searchItem(c echo.Context) error {
 		c.Logger().Fatalf("JSONに変換できませんでした: %v", err)
 	}
 	return c.JSONBlob(http.StatusOK, res)
+}
+
+func getImg(c echo.Context) error {
+	// Create image path
+	imgPath := path.Join(ImgDir, c.Param("imageFilename"))
+
+	if !strings.HasSuffix(imgPath, ".jpg") {
+		res := Response{Message: "Image path does not end with .jpg"}
+		return c.JSON(http.StatusBadRequest, res)
+	}
+	if _, err := os.Stat(imgPath); err != nil {
+		c.Logger().Infof("Image not found: %s", imgPath)
+		imgPath = path.Join(ImgDir, "default.jpg")
+	}
+	return c.File(imgPath)
 }
 
 func main() {

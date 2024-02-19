@@ -1,6 +1,7 @@
 create table items
 (
-    id         INTEGER PRYMARY KEY AUTOINCREMENT,
+    id         INTEGER
+        primary key autoincrement,
     name       string,
     category   string,
     image_name string

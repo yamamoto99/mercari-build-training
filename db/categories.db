@@ -1,0 +1,6 @@
+create table categories
+(
+    id   INTEGER
+        primary key autoincrement,
+    name string
+);
