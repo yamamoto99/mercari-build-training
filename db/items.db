@@ -1,8 +1,8 @@
 create table items
 (
-    id         INTEGER
+    id          INTEGER not null
         primary key autoincrement,
-    name       string,
-    category   string,
-    image_name string
+    name        string  not null,
+    category_id INTEGER not null,
+    image_name  string  not null
 );

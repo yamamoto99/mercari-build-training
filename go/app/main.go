@@ -149,7 +149,13 @@ func root(c echo.Context) error {
 func addItem(c echo.Context) error {
 	// Get form data
 	name := c.FormValue("name")
+	if name == "" {
+		c.Logger().Fatalf("nameを入力してください")
+	}
 	category := c.FormValue("category")
+	if category == "" {
+		c.Logger().Fatalf("カテゴリーを入力してください")
+	}
 	img, err := c.FormFile("image")
 	if err != nil {
 		c.Logger().Fatalf("画像の受け取りに失敗しました: %v", err)

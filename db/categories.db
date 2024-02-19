@@ -1,6 +1,6 @@
 create table categories
 (
-    id   INTEGER
+    category_id   INTEGER not null
         primary key autoincrement,
-    name string
+    category_name string  not null
 );
