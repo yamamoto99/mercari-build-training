@@ -1,0 +1,7 @@
+create table items
+(
+    id         INTEGER PRYMARY KEY AUTOINCREMENT,
+    name       string,
+    category   string,
+    image_name string
+);
