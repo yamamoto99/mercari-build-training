@@ -136,8 +136,6 @@ func checkCategoryId(db *sql.DB, category string) (int, error) {
 				return -1, fmt.Errorf("IDの取得エラー: %v", err)
 			}
 			return int(createdId), err
-		} else {
-			return -1, fmt.Errorf("検索失敗: %v", err)
 		}
 	}
 	return id, err
