@@ -2,9 +2,14 @@ package main
 
 import (
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
+	"github.com/labstack/gommon/log"
+	_ "github.com/mattn/go-sqlite3"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -13,10 +18,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-
-	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
-	"github.com/labstack/gommon/log"
 )
 
 const (
@@ -32,6 +33,7 @@ type Items struct {
 }
 
 type Item struct {
+	Id        int    `json:"id"`
 	Name      string `json:"name"`
 	Category  string `json:"category"`
 	ImageName string `json:"imageName"`
@@ -69,6 +71,114 @@ func copyfile(img *multipart.FileHeader) (string, error) {
 	return newFileName, err
 }
 
+func connectDB(c echo.Context) *sql.DB {
+	// dbOpen
+	db, err := sql.Open("sqlite3", "../db/mercari.sqlite3")
+	if err != nil {
+		c.Logger().Fatalf("DB接続エラー: %v", err)
+	}
+	return db
+}
+
+func jsonconv(rows *sql.Rows) ([]byte, error) {
+	items := new(Items)
+	for rows.Next() {
+		item := Item{}
+		if err := rows.Scan(&item.Id, &item.Name, &item.Category, &item.ImageName); err != nil {
+			return nil, err
+		}
+		items.Items = append(items.Items, item)
+	}
+	// json.MarshalでJSON形式に変換
+	output, err := json.Marshal(&items)
+	if err != nil {
+		return nil, err
+	}
+	//// terminal上で末尾改行してない時に自動改行の%が付与されるのを防ぐため、あらかじめ改行を付与
+	res := append(output, byte('\n'))
+
+	return res, err
+}
+
+func searchCategoryId(db *sql.DB, category string) (int64, error) {
+	idStmt, err := db.Prepare("SELECT category_id FROM categories WHERE category_name = ?")
+	if err != nil {
+		return -1, fmt.Errorf("ステートメント生成エラー: %v", err)
+	}
+	// stmtClose
+	defer func(data *sql.Stmt) {
+		_ = data.Close()
+	}(idStmt)
+	r, err := idStmt.Query(category)
+	defer func(r *sql.Rows) {
+		_ = r.Close()
+	}(r)
+	var id int
+	r.Next()
+	if err := r.Scan(&id); err != nil {
+		return -1, fmt.Errorf("既存ID検索エラー: %v", err)
+	}
+	return int64(id), err
+}
+
+func addCategoryId(db *sql.DB, category string) (int64, error) {
+	// ステートメントを生成
+	categorystmt, err := db.Prepare("INSERT INTO categories (category_name) VALUES (?)")
+	if err != nil {
+		return -1, fmt.Errorf("ステートメント生成エラー: %v", err)
+	}
+	// stmtClose
+	defer func(data *sql.Stmt) {
+		_ = data.Close()
+	}(categorystmt)
+	// ステートメントを用いて書き込み
+	result, err := categorystmt.Exec(category)
+	if err != nil {
+		return -1, fmt.Errorf("新規ID書き込みエラー: %v", err)
+	}
+	createdId, err := result.LastInsertId()
+	if err != nil {
+		return -1, fmt.Errorf("IDの取得エラー: %v", err)
+	}
+	return createdId, err
+}
+
+func checkCategoryId(db *sql.DB, category string) (int64, error) {
+	// ステートメントを生成
+	stmt, err := db.Prepare("SELECT EXISTS (SELECT * FROM categories WHERE category_name = ?)")
+	if err != nil {
+		return -1, fmt.Errorf("ステートメント生成エラー: %v", err)
+	}
+	// stmtClose
+	defer func(data *sql.Stmt) {
+		_ = data.Close()
+	}(stmt)
+	// DBから取得
+	rows, err := stmt.Query(category)
+	var check bool
+	if rows.Next() {
+		res := rows.Scan(&check)
+		if res != nil {
+			return -1, fmt.Errorf("ID検索エラー: %v", err)
+		}
+	}
+	defer func(rows *sql.Rows) {
+		_ = rows.Close()
+	}(rows)
+	if check == true {
+		res, err := searchCategoryId(db, category)
+		if err != nil {
+			return -1, fmt.Errorf("カテゴリーが見つかりませんでした: %v", err)
+		}
+		return res, err
+	}
+	createdId, err := addCategoryId(db, category)
+	if err != nil {
+		return -1, fmt.Errorf("カテゴリーを追加できませんでした: %v", err)
+	}
+	return createdId, err
+}
+
 func root(c echo.Context) error {
 	res := Response{Message: "Hello, world!"}
 	return c.JSON(http.StatusOK, res)
@@ -77,99 +187,169 @@ func root(c echo.Context) error {
 func addItem(c echo.Context) error {
 	// Get form data
 	name := c.FormValue("name")
+	if name == "" {
+		c.Logger().Fatalf("nameを入力してください")
+	}
 	category := c.FormValue("category")
+	if category == "" {
+		c.Logger().Fatalf("カテゴリーを入力してください")
+	}
 	img, err := c.FormFile("image")
 	if err != nil {
 		c.Logger().Fatalf("画像の受け取りに失敗しました: %v", err)
 	}
+	c.Logger().Debugf("Receive item: %s", name)
+	c.Logger().Debugf("Receive category: %s", category)
+	c.Logger().Debugf("Receive imageFile: %s", img.Filename)
 	// 入手したファイルから名前をhash化したファイルを生成
 	newFileName, err := copyfile(img)
 	if err != nil {
 		c.Logger().Fatalf("%v", err)
 	}
+	db := connectDB(c)
+	// close処理
+	defer func(db *sql.DB) {
+		_ = db.Close()
+	}(db)
+	categoryId, err := checkCategoryId(db, category)
+	if err != nil {
+		c.Logger().Fatalf("failed id check: %v", err)
+	}
+	// ステートメントを生成
+	stmt, err := db.Prepare("INSERT INTO items (name, category_id, image_name) VALUES (?, ?, ?)")
+	if err != nil {
+		c.Logger().Fatalf("SQL書き込みエラー: %v", err)
+	}
+	// stmtClose
+	defer func(data *sql.Stmt) {
+		_ = data.Close()
+	}(stmt)
+	c.Logger().Infof(name)
+	c.Logger().Infof(strconv.FormatInt(categoryId, 10))
+	c.Logger().Infof(newFileName)
+	// ステートメントを用いて書き込み
+	if _, err = stmt.Exec(name, categoryId, newFileName); err != nil {
+		c.Logger().Fatalf("SQL書き込みエラー: %v", err)
+	}
 
-	c.Logger().Infof("Receive item: %s", name)
-	c.Logger().Infof("Receive category: %s", category)
-	c.Logger().Infof("Receive imageFile: %s", newFileName)
+	// ▽JSONに保存▽
 
-	item := Item{Name: name, Category: category, ImageName: newFileName}
-	// jsonファイル読み込み
-	inJsonItems, err := os.ReadFile("items.json")
-	if err != nil {
-		c.Logger().Fatalf("JSONデータを読み込めませんでした: %v", err)
-	}
-	var inItems Items
-	// 読み込んだファイルが空ではない時JSONを構造体に変換
-	if len(inJsonItems) != 0 {
-		err = json.Unmarshal(inJsonItems, &inItems)
-		if err != nil {
-			c.Logger().Fatalf("JSONファイルを構造体に変換できませんでした: %v", err)
-		}
-	}
-	// 構造体にformの値を追加
-	inItems.Items = append(inItems.Items, item)
-	// json.MarshalでJSON形式に変換
-	output, err := json.Marshal(&inItems)
-	if err != nil {
-		c.Logger().Fatalf("JSON生成中にエラーが発生しました: %v", err)
-	}
-	// jsonファイルを作成、すでにある場合はクリアして開く
-	file, err := os.Create("items.json")
-	if err != nil {
-		c.Logger().Fatalf("JSONファイルを開けませんでした: %v", err)
-	}
-	// ファイルclose
-	defer func(file *os.File) {
-		_ = file.Close()
-	}(file)
-	// jsonファイル書き込み
-	if _, err = file.Write(output); err != nil {
-		c.Logger().Fatalf("JSONファイル書き込み中にエラーが発生しました: %v", err)
-	}
+	//item := Item{Name: name, Category: category, ImageName: newFileName}
+	//// jsonファイル読み込み
+	//inJsonItems, err := os.ReadFile("items.json")
+	//if err != nil {
+	//	c.Logger().Fatalf("JSONデータを読み込めませんでした: %v", err)
+	//}
+	//var inItems Items
+	//// 読み込んだファイルが空ではない時JSONを構造体に変換
+	//if len(inJsonItems) != 0 {
+	//	err = json.Unmarshal(inJsonItems, &inItems)
+	//	if err != nil {
+	//		c.Logger().Fatalf("JSONファイルを構造体に変換できませんでした: %v", err)
+	//	}
+	//}
+	//// 構造体にformの値を追加
+	//inItems.Items = append(inItems.Items, item)
+	//// json.MarshalでJSON形式に変換
+	//output, err := json.Marshal(&inItems)
+	//if err != nil {
+	//	c.Logger().Fatalf("JSON生成中にエラーが発生しました: %v", err)
+	//}
+	//// jsonファイルを作成、すでにある場合はクリアして開く
+	//file, err := os.Create("items.json")
+	//if err != nil {
+	//	c.Logger().Fatalf("JSONファイルを開けませんでした: %v", err)
+	//}
+	//// ファイルclose
+	//defer func(file *os.File) {
+	//	_ = file.Close()
+	//}(file)
+	//// jsonファイル書き込み
+	//if _, err = file.Write(output); err != nil {
+	//	c.Logger().Fatalf("JSONファイル書き込み中にエラーが発生しました: %v", err)
+	//}
 	res := Response{Message: "書き込みが正常に完了しました。"}
 
 	return c.JSON(http.StatusOK, res)
 }
 
 func getItems(c echo.Context) error {
-	// jsonファイル読み込み
-	afterItems, err := os.ReadFile("items.json")
+	db := connectDB(c)
+	// close処理
+	defer func(db *sql.DB) {
+		_ = db.Close()
+	}(db)
+	rows, err := db.Query("SELECT items.id, items.name, categories.category_name, items.image_name FROM items INNER JOIN categories ON items.category_id = categories.category_id")
 	if err != nil {
-		c.Logger().Fatalf("JSONデータを読み込めませんでした: %v", err)
+		c.Logger().Fatalf("DBから値を取得できませんでした: %v", err)
 	}
-	// terminal上で末尾改行してない時に自動改行の%が付与されるのを防ぐため、あらかじめ改行を付与
-	res := append(afterItems, byte('\n'))
+	res, err := jsonconv(rows)
+	// ▽JSONから取得▽
+
+	//// jsonファイル読み込み
+	//afterItems, err := os.ReadFile("items.json")
+	//if err != nil {
+	//	c.Logger().Fatalf("JSONデータを読み込めませんでした: %v", err)
+	//}
 
 	// 取得したのがbyte形式だったのでJSON->JSONBlobに変更
 	return c.JSONBlob(http.StatusOK, res)
 }
 
-func getItemById(c echo.Context) error {
-	// jsonファイル読み込み
-	inJsonItems, err := os.ReadFile("items.json")
+//func getItemById(c echo.Context) error {
+//	// jsonファイル読み込み
+//	inJsonItems, err := os.ReadFile("items.json")
+//	if err != nil {
+//		c.Logger().Fatalf("JSONデータを読み込めませんでした: %v", err)
+//	}
+//	var inItems Items
+//	// 読み込んだファイルが空の時早期return
+//	if len(inJsonItems) == 0 {
+//		res := Response{Message: "itemはまだ登録されていません"}
+//		return c.JSON(http.StatusOK, res)
+//	}
+//	err = json.Unmarshal(inJsonItems, &inItems)
+//	if err != nil {
+//		c.Logger().Fatalf("JSONファイルを構造体に変換できませんでした: %v", err)
+//	}
+//	index, err := strconv.Atoi(c.Param("item_id"))
+//	if err != nil {
+//		c.Logger().Fatalf("idの取得に失敗しました: %v", err)
+//	}
+//	if len(inItems.Items) <= index {
+//		res := Response{Message: "存在しないIDです"}
+//		return c.JSON(http.StatusOK, res)
+//	}
+//	res := inItems.Items[index]
+//	return c.JSON(http.StatusOK, res)
+//}
+
+func searchItem(c echo.Context) error {
+	keyword := c.QueryParam("keyword")
+	db := connectDB(c)
+	// close処理
+	defer func(db *sql.DB) {
+		_ = db.Close()
+	}(db)
+	// ステートメントを生成
+	stmt, err := db.Prepare("SELECT items.id, items.name, categories.category_name, items.image_name FROM items INNER JOIN categories ON items.category_id = categories.category_id WHERE name LIKE '%' || ? || '%'")
 	if err != nil {
-		c.Logger().Fatalf("JSONデータを読み込めませんでした: %v", err)
+		c.Logger().Fatalf("SQL書き込みエラー: %v", err)
 	}
-	var inItems Items
-	// 読み込んだファイルが空の時早期return
-	if len(inJsonItems) == 0 {
-		res := Response{Message: "itemはまだ登録されていません"}
-		return c.JSON(http.StatusOK, res)
-	}
-	err = json.Unmarshal(inJsonItems, &inItems)
+	// stmtClose
+	defer func(data *sql.Stmt) {
+		_ = data.Close()
+	}(stmt)
+	// DBから取得
+	rows, err := stmt.Query(keyword)
 	if err != nil {
-		c.Logger().Fatalf("JSONファイルを構造体に変換できませんでした: %v", err)
+		c.Logger().Fatalf("DBから値を取得できませんでした: %v", err)
 	}
-	index, err := strconv.Atoi(c.Param("item_id"))
+	res, err := jsonconv(rows)
 	if err != nil {
-		c.Logger().Fatalf("idの取得に失敗しました: %v", err)
+		c.Logger().Fatalf("JSONに変換できませんでした: %v", err)
 	}
-	if len(inItems.Items) <= index {
-		res := Response{Message: "存在しないIDです"}
-		return c.JSON(http.StatusOK, res)
-	}
-	res := inItems.Items[index]
-	return c.JSON(http.StatusOK, res)
+	return c.JSONBlob(http.StatusOK, res)
 }
 
 func getImg(c echo.Context) error {
@@ -208,7 +388,8 @@ func main() {
 	e.GET("/", root)
 	e.GET("/items", getItems)
 	e.POST("/items", addItem)
-	e.GET("/items/:item_id", getItemById)
+	e.GET("/search", searchItem)
+	//e.GET("/items/:item_id", getItemById)
 	e.GET("/image/:imageFilename", getImg)
 
 	// Start server
