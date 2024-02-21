@@ -6,10 +6,9 @@ FROM golang:1.22-alpine
 # ワーキングディレクトリを/appに指定
 WORKDIR /app
 
-# C言語のライブラリを使うためにGCC追加
-# コンパイルしたものを呼び出すためにCGOを追加alpineの場合musl-devを追加する？
-# gitからimportしてるpackageがあるのでgit追加
-RUN apk add --no-cache gcc musl-dev git
+# コンパイルするためにGCCを追加
+# alpineはmusl libcを採用してるのでCのプログラムをビルドするためにmusl-devが必要
+RUN apk add --no-cache gcc musl-dev
 
 # ファイルやディレクトリを指定して/appにコピーする
 COPY go/go.mod /app
