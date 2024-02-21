@@ -131,6 +131,7 @@ func addCategoryId(db *sql.DB, category string) (int64, error) {
 	defer func(data *sql.Stmt) {
 		_ = data.Close()
 	}(categorystmt)
+	fmt.Print(category)
 	// ステートメントを用いて書き込み
 	result, err := categorystmt.Exec(category)
 	if err != nil {
@@ -149,12 +150,12 @@ func checkCategoryId(db *sql.DB, category string) (int64, error) {
 	if err != nil {
 		return -1, fmt.Errorf("ステートメント生成エラー: %v", err)
 	}
-	// stmtClose
-	defer func(data *sql.Stmt) {
-		_ = data.Close()
-	}(stmt)
 	// DBから取得
 	rows, err := stmt.Query(category)
+	// stmtClose
+	func(data *sql.Stmt) {
+		_ = data.Close()
+	}(stmt)
 	var check bool
 	if rows.Next() {
 		res := rows.Scan(&check)
@@ -162,7 +163,7 @@ func checkCategoryId(db *sql.DB, category string) (int64, error) {
 			return -1, fmt.Errorf("ID検索エラー: %v", err)
 		}
 	}
-	defer func(rows *sql.Rows) {
+	func(rows *sql.Rows) {
 		_ = rows.Close()
 	}(rows)
 	if check == true {
