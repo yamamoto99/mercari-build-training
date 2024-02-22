@@ -73,7 +73,7 @@ func copyfile(img *multipart.FileHeader) (string, error) {
 
 func connectDB(c echo.Context) *sql.DB {
 	// dbOpen
-	db, err := sql.Open("sqlite3", "../db/mercari.sqlite3")
+	db, err := sql.Open("sqlite3", "mercari.sqlite3")
 	if err != nil {
 		c.Logger().Fatalf("DB接続エラー: %v", err)
 	}
@@ -394,5 +394,5 @@ func main() {
 	e.GET("/image/:imageFilename", getImg)
 
 	// Start server
-	e.Logger.Fatal(e.Start("127.0.0.1:9000"))
+	e.Logger.Fatal(e.Start(":9000"))
 }
