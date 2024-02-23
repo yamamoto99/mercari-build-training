@@ -1,5 +1,6 @@
 package main
 
+import "C"
 import (
 	"crypto/sha256"
 	"database/sql"
@@ -17,7 +18,6 @@ import (
 	"path"
 	"path/filepath"
 	"strconv"
-	"strings"
 )
 
 const (
@@ -354,17 +354,30 @@ func searchItem(c echo.Context) error {
 }
 
 func getImg(c echo.Context) error {
-	// Create image path
-	imgPath := path.Join(ImgDir, c.Param("imageFilename"))
-
-	if !strings.HasSuffix(imgPath, ".jpg") {
-		res := Response{Message: "Image path does not end with .jpg"}
-		return c.JSON(http.StatusBadRequest, res)
+	id := c.Param("imageId")
+	db := connectDB(c)
+	// close処理
+	defer func(db *sql.DB) {
+		_ = db.Close()
+	}(db)
+	stmt, err := db.Prepare("SELECT items.image_name FROM items WHERE id = ?")
+	if err != nil {
+		c.Logger().Fatalf("stmtを生成できませんでした %v", err)
 	}
+	c.Logger().Infof(id)
+	// Create image path
+	var imgPath string
+	err = stmt.QueryRow(id).Scan(&imgPath)
+	if err != nil {
+		c.Logger().Fatalf("imageName取得エラー %v", err)
+	}
+	imgPath = path.Join(ImgDir, imgPath)
 	if _, err := os.Stat(imgPath); err != nil {
 		c.Logger().Infof("Image not found: %s", imgPath)
 		imgPath = path.Join(ImgDir, "default.jpg")
+		c.Logger().Infof(imgPath)
 	}
+
 	return c.File(imgPath)
 }
 
@@ -391,7 +404,7 @@ func main() {
 	e.POST("/items", addItem)
 	e.GET("/search", searchItem)
 	//e.GET("/items/:item_id", getItemById)
-	e.GET("/image/:imageFilename", getImg)
+	e.GET("/image/:imageId", getImg)
 
 	// Start server
 	e.Logger.Fatal(e.Start(":9000"))
