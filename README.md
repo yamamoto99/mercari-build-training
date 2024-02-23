@@ -32,7 +32,7 @@ The following icons indicate pointers for
 - [x] **STEP5** Docker ([JA](document/05-docker.ja.md)/[EN](document/05-docker.en.md))
 - [x] **STEP6** Continuous Integration(CI) ([JA](document/06-ci.ja.md)
   /[EN](document/06-ci.en.md))
-- [ ] **STEP7** (Stretch) Frontend ([JA](document/07-frontend.ja.md)
+- [x] **STEP7** (Stretch) Frontend ([JA](document/07-frontend.ja.md)
   /[EN](document/07-frontend.en.md))
 - [ ] **STEP8** (Stretch)  Run multi service ([JA](document/08-docker-compose.ja.md)
   /[EN](document/08-docker-compose.en.md))
