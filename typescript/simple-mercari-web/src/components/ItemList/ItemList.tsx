@@ -46,7 +46,7 @@ export const ItemList: React.FC<Prop> = (props) => {
   }, [reload]);
 
   return (
-    <div className="flex flex-wrap">
+    <div className="flex flex-wrap m-5">
       {items?.map((item) => {
         return (
           <div className="p-2" key={item.id}>
