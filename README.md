@@ -30,7 +30,7 @@ The following icons indicate pointers for
   /[EN](document/03-api.en.md))
 - [x] **STEP4** Database ([JA](document/04-database.ja.md)/[EN](document/04-database.en.md))
 - [x] **STEP5** Docker ([JA](document/05-docker.ja.md)/[EN](document/05-docker.en.md))
-- [ ] **STEP6** Continuous Integration(CI) ([JA](document/06-ci.ja.md)
+- [x] **STEP6** Continuous Integration(CI) ([JA](document/06-ci.ja.md)
   /[EN](document/06-ci.en.md))
 - [ ] **STEP7** (Stretch) Frontend ([JA](document/07-frontend.ja.md)
   /[EN](document/07-frontend.en.md))
