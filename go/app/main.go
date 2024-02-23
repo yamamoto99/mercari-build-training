@@ -29,7 +29,7 @@ type Response struct {
 }
 
 type Items struct {
-	Items []Item `json:"Items"`
+	Items []Item `json:"items"`
 }
 
 type Item struct {
@@ -73,7 +73,7 @@ func copyfile(img *multipart.FileHeader) (string, error) {
 
 func connectDB(c echo.Context) *sql.DB {
 	// dbOpen
-	db, err := sql.Open("sqlite3", "mercari.sqlite3")
+	db, err := sql.Open("sqlite3", "../db/mercari.sqlite3")
 	if err != nil {
 		c.Logger().Fatalf("DB接続エラー: %v", err)
 	}
