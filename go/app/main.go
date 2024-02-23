@@ -17,7 +17,6 @@ import (
 	"path"
 	"path/filepath"
 	"strconv"
-	"strings"
 )
 
 const (
@@ -29,7 +28,7 @@ type Response struct {
 }
 
 type Items struct {
-	Items []Item `json:"Items"`
+	Items []Item `json:"items"`
 }
 
 type Item struct {
@@ -73,7 +72,7 @@ func copyfile(img *multipart.FileHeader) (string, error) {
 
 func connectDB(c echo.Context) *sql.DB {
 	// dbOpen
-	db, err := sql.Open("sqlite3", "mercari.sqlite3")
+	db, err := sql.Open("sqlite3", "../db/mercari.sqlite3")
 	if err != nil {
 		c.Logger().Fatalf("DB接続エラー: %v", err)
 	}
@@ -354,17 +353,30 @@ func searchItem(c echo.Context) error {
 }
 
 func getImg(c echo.Context) error {
-	// Create image path
-	imgPath := path.Join(ImgDir, c.Param("imageFilename"))
-
-	if !strings.HasSuffix(imgPath, ".jpg") {
-		res := Response{Message: "Image path does not end with .jpg"}
-		return c.JSON(http.StatusBadRequest, res)
+	id := c.Param("imageId")
+	db := connectDB(c)
+	// close処理
+	defer func(db *sql.DB) {
+		_ = db.Close()
+	}(db)
+	stmt, err := db.Prepare("SELECT items.image_name FROM items WHERE id = ?")
+	if err != nil {
+		c.Logger().Fatalf("stmtを生成できませんでした %v", err)
 	}
+	c.Logger().Infof(id)
+	// Create image path
+	var imgPath string
+	err = stmt.QueryRow(id).Scan(&imgPath)
+	if err != nil {
+		c.Logger().Fatalf("imageName取得エラー %v", err)
+	}
+	imgPath = path.Join(ImgDir, imgPath)
 	if _, err := os.Stat(imgPath); err != nil {
 		c.Logger().Infof("Image not found: %s", imgPath)
 		imgPath = path.Join(ImgDir, "default.jpg")
+		c.Logger().Infof(imgPath)
 	}
+
 	return c.File(imgPath)
 }
 
@@ -391,7 +403,7 @@ func main() {
 	e.POST("/items", addItem)
 	e.GET("/search", searchItem)
 	//e.GET("/items/:item_id", getItemById)
-	e.GET("/image/:imageFilename", getImg)
+	e.GET("/image/:imageId", getImg)
 
 	// Start server
 	e.Logger.Fatal(e.Start(":9000"))

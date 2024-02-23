@@ -46,17 +46,19 @@ export const ItemList: React.FC<Prop> = (props) => {
   }, [reload]);
 
   return (
-    <div>
-      {items.map((item) => {
+    <div className="flex flex-wrap m-5">
+      {items?.map((item) => {
         return (
-          <div key={item.id} className='ItemList'>
-            {/* TODO: Task 1: Replace the placeholder image with the item image */}
-            <img src={placeholderImage} />
-            <p>
-              <span>Name: {item.name}</span>
-              <br />
-              <span>Category: {item.category}</span>
-            </p>
+          <div className="p-2" key={item.id}>
+            <div className='max-w-64 rounded overflow-hidden shadow-lg bg-white'>
+              {/* TODO: Task 1: Replace the placeholder image with the item image */}
+              <img className="w-64 h-64 border" src={"http://localhost:9000/image/" + item.id}/>
+              <div className="px-6 py-4 border">
+                <span className="font-bold text-xl mb-2">{item.name}</span>
+                <br/>
+                <span className="text-gray-700 text-base">{item.category}</span>
+              </div>
+            </div>
           </div>
         )
       })}
