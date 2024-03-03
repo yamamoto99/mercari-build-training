@@ -14,7 +14,7 @@ RUN apk add --no-cache gcc musl-dev
 COPY go/go.mod /app
 COPY go/go.sum /app
 COPY db/mercari.sqlite3 /app
-COPY go/app/main.go /app
+COPY go/app . /app
 # imagesはフォルダで持ちたいのでフォルダを/app/imagesにコピー
 COPY go/images/ /app/images
 
@@ -32,6 +32,9 @@ USER trainee
 
 # /appをビルド
 RUN go build -o a.out /app
+
+# ポートを指定
+EXPOSE 9000
 
 # a.outを実行
 CMD ["./a.out"]
