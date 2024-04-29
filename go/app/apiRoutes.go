@@ -128,3 +128,30 @@ func getImg(c echo.Context) error {
 
 	return c.File(imgPath)
 }
+
+func getItemById(c echo.Context) error {
+	id := c.Param("item_Id")
+	db := connectDB(c)
+	// close処理
+	defer func(db *sql.DB) {
+		_ = db.Close()
+	}(db)
+	stmt, err := db.Prepare("SELECT items.id FROM items WHERE id = ?")
+	if err != nil {
+		c.Logger().Fatalf("stmtを生成できませんでした %v", err)
+	}
+	defer func(data *sql.Stmt) {
+		_ = data.Close()
+	}(stmt)
+	// DBから取得
+	rows, err := stmt.Query(id)
+	if err != nil {
+		c.Logger().Fatalf("DBから値を取得できませんでした: %v", err)
+	}
+	res, err := jsonconv(rows)
+	if err != nil {
+		c.Logger().Fatalf("JSONに変換できませんでした: %v", err)
+	}
+	return c.JSONBlob(http.StatusOK, res)
+}
+

@@ -31,7 +31,7 @@ func main() {
 	e.GET("/items", getItems)
 	e.POST("/items", addItem)
 	e.GET("/search", searchItem)
-	//e.GET("/items/:item_id", getItemById)
+	e.GET("/items/:item_id", getItemById)
 	e.GET("/image/:imageId", getImg)
 
 	// Start server
