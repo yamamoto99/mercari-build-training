@@ -103,7 +103,11 @@ func searchItem(c echo.Context) error {
 }
 
 func getImg(c echo.Context) error {
-	id := c.Param("imageId")
+	idStr := c.Param("imageId")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		c.Logger().Fatalf("IDの変換に失敗しました: %v", err)
+	}
 	db := connectDB(c)
 	// close処理
 	defer func(db *sql.DB) {
@@ -113,7 +117,6 @@ func getImg(c echo.Context) error {
 	if err != nil {
 		c.Logger().Fatalf("stmtを生成できませんでした %v", err)
 	}
-	c.Logger().Infof(id)
 	// Create image path
 	var imgPath string
 	err = stmt.QueryRow(id).Scan(&imgPath)
