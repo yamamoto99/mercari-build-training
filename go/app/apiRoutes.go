@@ -136,7 +136,7 @@ func getItemById(c echo.Context) error {
 	defer func(db *sql.DB) {
 		_ = db.Close()
 	}(db)
-	stmt, err := db.Prepare("SELECT items.id FROM items WHERE id = ?")
+	stmt, err := db.Prepare("SELECT * FROM items WHERE id = ?")
 	if err != nil {
 		c.Logger().Fatalf("stmtを生成できませんでした %v", err)
 	}
