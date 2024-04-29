@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"strconv"
 )
 
 func root(c echo.Context) error {
@@ -130,7 +131,11 @@ func getImg(c echo.Context) error {
 }
 
 func getItemById(c echo.Context) error {
-	id := c.Param("item_Id")
+	idStr := c.Param("item_Id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		c.Logger().Fatalf("IDの変換に失敗しました: %v", err)
+	}
 	db := connectDB(c)
 	// close処理
 	defer func(db *sql.DB) {
